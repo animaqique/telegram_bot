@@ -1,21 +1,73 @@
-#!/bin/bash
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, InputMediaPhoto, InputMediaVideo
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Остановка сервиса бота
-sudo systemctl stop telegram_bot.service
+# Замените 'YOUR_BOT_TOKEN' на токен вашего бота
+TOKEN = '7422639066:AAFXpir4faa8Rj0mvnsicS79egy3u2l2sco'
+# Замените '@your_channel_id' на идентификатор вашего канала
+CHANNEL_ID = '@abeonatour'
 
-# Переход в директорию с ботом
-cd /home/your_username/telegram_bot/
+# Хранение данных для публикации
+post_data = {
+    "text": "",
+    "media": []
+}
 
-# Получение последней версии кода из репозитория
-git pull origin master
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text('Используйте /prepare для подготовки поста и /publish для публикации.')
 
-# Запуск миграций или других необходимых команд
-# Например, если у вас есть виртуальное окружение:
-# source venv/bin/activate
-# pip install -r requirements.txt
+async def prepare(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Очистка предыдущих данных
+    post_data["text"] = ""
+    post_data["media"] = []
+    await update.message.reply_text('Отправьте текст для поста.')
 
-# Перезапуск сервиса бота
-sudo systemctl start telegram_bot.service
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.message.photo:
+        # Сохранение изображений
+        photo_id = update.message.photo[-1].file_id
+        post_data["media"].append(InputMediaPhoto(photo_id))
+        await update.message.reply_text('Изображение добавлено. Отправьте текст для поста или нажмите /publish для публикации.')
+    elif update.message.video:
+        # Сохранение видео
+        video_id = update.message.video.file_id
+        post_data["media"].append(InputMediaVideo(video_id))
+        await update.message.reply_text('Видео добавлено. Отправьте текст для поста или нажмите /publish для публикации.')
+    elif update.message.text:
+        # Сохранение текста
+        post_data["text"] = update.message.text
+        await update.message.reply_text('Текст сохранен. Отправьте изображение/видео или нажмите /publish для публикации.')
 
-# Проверка статуса
-sudo systemctl status telegram_bot.service
+async def publish(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not post_data["text"] and not post_data["media"]:
+        await update.message.reply_text('Нет данных для публикации. Используйте /prepare для подготовки поста.')
+        return
+
+    # Создание кнопки
+    keyboard = [
+        [InlineKeyboardButton("Написать мне 🤗", url='https://t.me/kris_konovalovaaa')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    # Публикация текста и медиа
+    if post_data["media"]:
+        await context.bot.send_media_group(chat_id=CHANNEL_ID, media=post_data["media"])
+    if post_data["text"]:
+        await context.bot.send_message(chat_id=CHANNEL_ID, text=post_data["text"], reply_markup=reply_markup, parse_mode='MarkdownV2')
+
+    # Очистка данных после публикации
+    post_data["text"] = ""
+    post_data["media"] = []
+    await update.message.reply_text('Пост опубликован.')
+
+def main() -> None:
+    application = Application.builder().token(TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("prepare", prepare))
+    application.add_handler(CommandHandler("publish", publish))
+    application.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.TEXT, handle_message))
+
+    application.run_polling()
+
+if __name__ == '__main__':
+    main()
